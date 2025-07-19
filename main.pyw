@@ -91,19 +91,19 @@ logger = logging.getLogger(__name__)
 
 class I18nManager:
     """国际化管理类 (Internationalization manager class)"""
-    
+
     def __init__(self):
         self.languages = {}  # 语言字典: 语言代码 -> 语言名称
         self.current_lang = None
         self.lang_data = {}
         self.default_lang = "en_us"  # 默认语言
-        
+
         # 加载内置语言
         self.load_builtin_languages()
-        
+
         # 加载外部语言包
         self.load_external_language_packs()
-        
+
     def load_builtin_languages(self):
         """加载内置语言"""
         # 内置中文简体
@@ -175,7 +175,7 @@ class I18nManager:
             "error_lang_dir_not_found": "语言目录不存在。",
             "server_already_exists": "服务器 {0} 已存在，是否仍要添加？"
         }
-        
+
         # 内置英文
         self.languages["en_us"] = "English (US)"
         self.lang_data["en_us"] = {
@@ -245,11 +245,11 @@ class I18nManager:
             "error_lang_dir_not_found": "Language directory does not exist.",
             "server_already_exists": "Server {0} already exists. Add anyway?"
         }
-    
+
     def load_external_language_packs(self):
         """加载外部语言包"""
         lang_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lang")
-        
+
         # 检查语言目录是否存在
         if not os.path.exists(lang_dir):
             try:
@@ -258,7 +258,7 @@ class I18nManager:
             except Exception as e:
                 logger.error(f"Failed to create language directory: {e}")
                 return
-        
+
         # 加载所有JSON语言文件
         lang_files = glob.glob(os.path.join(lang_dir, "*.json"))
         for lang_file in lang_files:
@@ -276,15 +276,15 @@ class I18nManager:
                         logger.warning(f"Language pack {lang_code} is missing 'language_name' key")
             except Exception as e:
                 logger.error(f"Failed to load language pack {lang_file}: {e}")
-    
+
     def get_language_name(self, lang_code):
         """获取语言名称"""
         return self.languages.get(lang_code, lang_code)
-    
+
     def get_available_languages(self):
         """获取可用语言列表"""
         return sorted(self.languages.items(), key=lambda x: x[1])
-    
+
     def set_language(self, lang_code):
         """设置当前语言"""
         # 特殊处理：系统默认
@@ -298,7 +298,7 @@ class I18nManager:
             else:
                 # 如果没有找到匹配的，使用默认语言
                 lang_code = self.default_lang
-        
+
         if lang_code in self.lang_data:
             self.current_lang = lang_code
             logger.info(f"Language set to: {lang_code} ({self.get_language_name(lang_code)})")
@@ -307,31 +307,31 @@ class I18nManager:
             logger.warning(f"Language {lang_code} not found, using default")
             self.current_lang = self.default_lang
             return False
-    
+
     def translate(self, key, *args):
         """翻译文本"""
         if not self.current_lang:
             self.set_language(self.default_lang)
-        
+
         # 尝试从当前语言获取翻译
         translation = self.lang_data[self.current_lang].get(key)
-        
+
         # 如果没有找到，尝试从默认语言获取
         if not translation and self.current_lang != self.default_lang:
             translation = self.lang_data[self.default_lang].get(key)
-        
+
         # 如果还是没有找到，返回键名
         if not translation:
             logger.warning(f"Translation key not found: {key}")
             translation = key
-        
+
         # 如果有参数，进行格式化
         if args:
             try:
                 translation = translation.format(*args)
             except Exception as e:
                 logger.error(f"Failed to format translation: {translation}, args: {args}, error: {e}")
-        
+
         return translation
 
 
@@ -428,9 +428,9 @@ class ServerManager:
         """添加新服务器 (Add new server)"""
         # 检查服务器是否已存在 (Check if server already exists)
         if any(s["address"] == address for s in self.servers):
-            if QMessageBox.question(window, i18n.translate("confirm_delete_server"), 
-                                   i18n.translate("server_already_exists", address), 
-                                   QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            if QMessageBox.question(window, i18n.translate("confirm_delete_server"),
+                                    i18n.translate("server_already_exists", address),
+                                    QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
                 logger.warning(f"服务器 {address} 已存在，未添加")
                 return False
 
@@ -467,11 +467,11 @@ class ServerManager:
 class MinecraftStatusChecker(QMainWindow):
     def __init__(self):
         super().__init__()
-        
+
         # 初始化国际化管理器
         global i18n
         i18n = I18nManager()
-        
+
         self.setGeometry(300, 300, 900, 600)
 
         # 初始化管理器 (Initialize managers)
@@ -479,7 +479,7 @@ class MinecraftStatusChecker(QMainWindow):
         self.server_manager = ServerManager()
 
         self.threads = []  # 活动线程列表 (Active thread list)
-        
+
         # 设置当前语言
         i18n.set_language(self.settings["language"])
 
@@ -536,12 +536,12 @@ class MinecraftStatusChecker(QMainWindow):
                 (i18n.translate("menu_options_list_row_multi"), "multi")
             ]
         )
-        
+
         # 语言菜单
         language_menu = option_menu.addMenu(i18n.translate("menu_language"))
         group = QActionGroup(self)
         group.setExclusive(True)
-        
+
         # 添加系统默认选项
         action = self.add_menu_action(
             language_menu, i18n.translate("menu_language_system"),
@@ -549,7 +549,7 @@ class MinecraftStatusChecker(QMainWindow):
             checkable=True,
             checked=(self.settings["language"] == "system"))
         group.addAction(action)
-        
+
         # 添加所有可用语言
         for lang_code, lang_name in i18n.get_available_languages():
             if lang_code != "system":
@@ -984,7 +984,7 @@ class MinecraftStatusChecker(QMainWindow):
 
             # MOTD信息
             motd = status.motd.to_html()
-            details += f"<b>{i18n.translate('server_details_motd')}:</b>{motd.replace('\n', '<br>')}<br>"
+            details += f"<b>{i18n.translate('server_details_motd')}:</b>" + motd.replace('\n', '<br>') + "<br>"
 
             # 玩家列表
             if status.players.sample:
@@ -1098,16 +1098,16 @@ class MinecraftStatusChecker(QMainWindow):
         if i18n.set_language(lang_code):
             self.settings["language"] = lang_code
             self.retranslate_ui()
-    
+
     def retranslate_ui(self):
         """重新翻译UI"""
         # 更新窗口标题
         self.setWindowTitle(i18n.translate("app_title"))
-        
+
         # 更新菜单
         self.menuBar().clear()
         self.create_menu_bar()
-        
+
         # 更新按钮文本
         button_layout = self.button_layout
         button_texts = [
@@ -1116,14 +1116,14 @@ class MinecraftStatusChecker(QMainWindow):
             i18n.translate("button_refresh"),
             i18n.translate("button_refresh_all")
         ]
-        
+
         for i in range(button_layout.count()):
             button = button_layout.itemAt(i).widget()
             button.setText(button_texts[i])
-        
+
         # 更新详情标签
         self.detail_label.setText(i18n.translate("server_details_title"))
-        
+
         # 重新加载服务器列表以更新状态文本
         self.update_server_list()
 
@@ -1136,11 +1136,11 @@ class MinecraftStatusChecker(QMainWindow):
             try:
                 os.startfile(log_file)
             except Exception as e:
-                QMessageBox.warning(self, i18n.translate("menu_file_log"), 
-                                   i18n.translate("error_log_open", str(e)))
+                QMessageBox.warning(self, i18n.translate("menu_file_log"),
+                                    i18n.translate("error_log_open", str(e)))
         else:
-            QMessageBox.warning(self, i18n.translate("menu_file_log"), 
-                               i18n.translate("error_log_not_found"))
+            QMessageBox.warning(self, i18n.translate("menu_file_log"),
+                                i18n.translate("error_log_not_found"))
 
     def show_run_dir(self):
         """显示运行目录"""
@@ -1149,24 +1149,24 @@ class MinecraftStatusChecker(QMainWindow):
             try:
                 os.startfile(run_dir)
             except Exception as e:
-                QMessageBox.warning(self, i18n.translate("menu_file_run_dir"), 
-                                   i18n.translate("error_run_dir_open", str(e)))
+                QMessageBox.warning(self, i18n.translate("menu_file_run_dir"),
+                                    i18n.translate("error_run_dir_open", str(e)))
         else:
-            QMessageBox.warning(self, i18n.translate("menu_file_run_dir"), 
-                               i18n.translate("error_run_dir_not_found"))
-            
+            QMessageBox.warning(self, i18n.translate("menu_file_run_dir"),
+                                i18n.translate("error_run_dir_not_found"))
+
     def show_lang_dir(self):
         """显示语言目录"""
-        lang_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lang") 
+        lang_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lang")
         if os.path.exists(lang_dir):
             try:
                 os.startfile(lang_dir)
             except Exception as e:
-                QMessageBox.warning(self, i18n.translate("menu_file_lang_dir"), 
-                                   i18n.translate("error_lang_dir_open", str(e)))
+                QMessageBox.warning(self, i18n.translate("menu_file_lang_dir"),
+                                    i18n.translate("error_lang_dir_open", str(e)))
         else:
-            QMessageBox.warning(self, i18n.translate("menu_file_lang_dir"), 
-                               i18n.translate("error_lang_dir_not_found"))
+            QMessageBox.warning(self, i18n.translate("menu_file_lang_dir"),
+                                i18n.translate("error_lang_dir_not_found"))
 
     def show_about(self):
         """显示关于信息"""
@@ -1191,4 +1191,4 @@ if __name__ == "__main__":
 
     exit_code = app.exec_()
     logger.info(f"退出程序，退出码: {exit_code}")
-    sys.exit(exit_code)    
+    sys.exit(exit_code)
