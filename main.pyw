@@ -1,5 +1,7 @@
 # ------------------------- 检查 Python 版本 (Check Python version) -------------------------
+import importlib
 import sys
+import time
 if sys.version_info < (3, 10):
     from tkinter import messagebox
     messagebox.showerror('Python版本过低 (Python version too low)', 'Python版本过低，请升级到3.10或以上版本后重试。\nPython version too low, please upgrade to 3.10 or above to retry.')
@@ -8,7 +10,6 @@ if sys.version_info < (3, 10):
 # ------------------------- 检查依赖包 (Check dependencies) -------------------------
 try:
     import PyQt5
-    import mcstatus
 except ImportError:
     import os
     from tkinter import messagebox
@@ -18,20 +19,21 @@ except ImportError:
     # 改进依赖安装流程 (Improved dependency installation process)
     response = messagebox.askyesno(
         '缺少依赖 (Missing dependencies)',
-        '缺少依赖包，请在命令行下运行 pip install PyQt5 mcstatus 后重试。\nMissing dependencies, please run "pip install PyQt5 mcstatus" in the command line and retry.\n\n'
+        '缺少依赖包，请在命令行下运行 pip install PyQt5 后重试。\nMissing dependencies, please run "pip install PyQt5" in the command line and retry.\n\n'
         '点击"是"安装依赖包，点击"否"退出程序。\nClick "Yes" to install dependencies, click "No" to exit the program.'
     )
 
     if response:
         try:
-            os.system('pip install PyQt5 mcstatus && echo 依赖安装成功 && timeout /t 5')
+            os.system('pip install PyQt5 && echo 依赖安装成功 && timeout /t 5')
 
             # 检查安装是否成功 (Check installation success)
             import PyQt5
-            import mcstatus
+
             messagebox.showinfo('提示 (Information)', '依赖安装成功。\nDependencies installed successfully.')
         except ImportError:
-            messagebox.showerror('缺少依赖 (Missing dependencies)', '安装失败，请在命令行下运行 pip install PyQt5 mcstatus 手动安装。\nInstallation failed, please run "pip install PyQt5 mcstatus" manually in the command line.')
+            messagebox.showerror('缺少依赖 (Missing dependencies)',
+                                 '安装失败，请在命令行下运行 pip install PyQt5 手动安装。\nInstallation failed, please run "pip install PyQt5" manually in the command line.')
             sys.exit()
     else:
         sys.exit()
@@ -45,9 +47,13 @@ import glob
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QPoint, QSize, QLocale
 from PyQt5.QtGui import QFont, QColor, QIcon, QPixmap
-from mcstatus import JavaServer
-from mcstatus.status_response import JavaStatusResponse
 import logging
+import ipaddress
+from abc import ABC, abstractmethod
+from core.interfaces import IPlugin, IChecker
+from core.models import ServerStatus, Player
+from pathlib import Path
+import copy
 
 # 常量定义 (Constants)
 DEFAULT_SETTINGS = {
@@ -55,7 +61,8 @@ DEFAULT_SETTINGS = {
     "icon_list_size": "32x32",
     "icon_detail_size": "64x64",
     "list_row_size": "multi",
-    "language": "system"  # 新增：默认使用系统语言
+    "language": "system",  # 新增：默认使用系统语言
+    "plugins": {"checkers": ["local", "online"]},  # 默认加载插件
 }
 
 COLOR_ONLINE = QColor(220, 255, 220)  # 浅绿色
@@ -89,6 +96,218 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 
+def deep_merge(dict1, dict2):
+    result = dict1.copy()  # 避免修改原始字典
+    for key, value in dict2.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = deep_merge(result[key], value)  # 递归合并嵌套字典
+        else:
+            result[key] = value  # 非字典类型或新键直接覆盖/添加
+    return result
+
+
+class FocusSignalListWidget(QListWidget):
+    focused = pyqtSignal()  # PySide中使用 Signal()
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self.focused.emit()  # 发射自定义信号
+
+
+class SelectorDialog(QDialog):
+    def __init__(self, name, avaliable_list, enabled_list, get_detail=None, directory=None, parent=None):
+        super().__init__(parent)
+        self.name = name
+        self.avaliable_list = avaliable_list
+        self.enabled_list = enabled_list
+        self.get_detail = get_detail
+        self.directory = directory
+        self.setWindowTitle(i18n.translate("selector_title", self.name))
+        self.setMinimumSize(600, 400)
+        self.resize(600, 550)
+
+        # 初始化UI
+        self.initUI()
+
+        # 添加数据
+        self.populateLists()
+
+    def initUI(self):
+        # 创建左侧列表（可用）
+        self.availableList = FocusSignalListWidget()
+        self.availableList.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.availableList.itemSelectionChanged.connect(self.show_details)
+        self.availableList.focused.connect(self.show_details)
+        self.ltHBox = QHBoxLayout()
+        self.availableLabel = QLabel(i18n.translate("selector_available", self.name))
+        self.ltHBox.addWidget(self.availableLabel)
+        self.ltHBox.addStretch()
+        self.dirButton = QPushButton(i18n.translate("selector_dir", self.name))
+        if self.directory is not None:
+            self.dirButton.clicked.connect(lambda: os.startfile(self.directory))
+            self.ltHBox.addWidget(self.dirButton)
+
+        # 创建右侧列表（已启用）
+        self.enabledList = FocusSignalListWidget()
+        self.enabledList.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.enabledList.itemSelectionChanged.connect(self.show_details)
+        self.enabledList.focused.connect(self.show_details)
+        self.enabledLabel = QLabel(i18n.translate("selector_enabled", self.name))
+
+        # 创建按钮
+        self.addButton = QPushButton(">")
+        self.addButton.setFixedWidth(40)
+        self.addButton.clicked.connect(self.addSelected)
+
+        self.removeButton = QPushButton("<")
+        self.removeButton.setFixedWidth(40)
+        self.removeButton.clicked.connect(self.removeSelected)
+
+        self.upButton = QPushButton(i18n.translate("selector_up", self.name))
+        self.upButton.clicked.connect(self.moveUp)
+
+        self.downButton = QPushButton(i18n.translate("selector_down", self.name))
+        self.downButton.clicked.connect(self.moveDown)
+
+        self.doneButton = QPushButton(i18n.translate("selector_done", self.name))
+        self.doneButton.clicked.connect(self.accept)
+
+        # 按钮布局（中间列）
+        buttonLayout = QVBoxLayout()
+        buttonLayout.addStretch()
+        buttonLayout.addWidget(self.addButton)
+        buttonLayout.addWidget(self.removeButton)
+        buttonLayout.addStretch()
+
+        # 右侧按钮布局（上移/下移）
+        moveButtonLayout = QHBoxLayout()
+        moveButtonLayout.addStretch()
+        moveButtonLayout.addWidget(self.upButton)
+        moveButtonLayout.addWidget(self.downButton)
+        moveButtonLayout.addStretch()
+
+        # 主布局
+        mainLayout = QHBoxLayout()
+
+        # 左侧布局
+        leftLayout = QVBoxLayout()
+        leftLayout.addLayout(self.ltHBox)
+        leftLayout.addWidget(self.availableList)
+
+        # 中间布局（按钮）
+        mainLayout.addLayout(leftLayout)
+        mainLayout.addLayout(buttonLayout)
+
+        # 右侧布局
+        rightLayout = QVBoxLayout()
+        rightLayout.addWidget(self.enabledLabel)
+        rightLayout.addWidget(self.enabledList)
+
+        # 添加移动按钮到右侧布局
+        rightLayout.addLayout(moveButtonLayout)
+
+        mainLayout.addLayout(rightLayout)
+
+        # 底部按钮布局
+        bottomLayout = QHBoxLayout()
+        bottomLayout.addStretch()
+        bottomLayout.addWidget(self.doneButton)
+
+        # 详细信息
+        self.infoLabel = QTextEdit()
+        self.infoLabel.setReadOnly(True)
+
+        # 整体布局
+        layout = QVBoxLayout()
+        layout.addLayout(mainLayout)
+        if self.get_detail is not None:
+            layout.addWidget(self.infoLabel)
+        layout.addLayout(bottomLayout)
+        self.setLayout(layout)
+
+    def populateLists(self):
+        for item in self.avaliable_list:
+            if isinstance(item, str):
+                self.availableList.addItem(QListWidgetItem(item))
+            elif isinstance(item, tuple):
+                list_item = QListWidgetItem(item[0])
+                list_item.setData(Qt.UserRole, item[1])
+                self.availableList.addItem(list_item)
+
+        for item in self.enabled_list:
+            if isinstance(item, str):
+                self.enabledList.addItem(QListWidgetItem(item))
+            elif isinstance(item, tuple):
+                list_item = QListWidgetItem(item[0])
+                list_item.setData(Qt.UserRole, item[1])
+                self.enabledList.addItem(list_item)
+
+    def addSelected(self):
+        # 将选中的项目从左侧移到右侧
+        selected_items = self.availableList.selectedItems()
+        for item in selected_items:
+            row = self.availableList.row(item)
+            self.availableList.takeItem(row)
+            self.enabledList.addItem(item.clone())
+
+    def removeSelected(self):
+        # 将选中的项目从右侧移到左侧
+        selected_items = self.enabledList.selectedItems()
+        for item in selected_items:
+            row = self.enabledList.row(item)
+            self.enabledList.takeItem(row)
+            self.availableList.addItem(item.clone())
+
+    def moveUp(self):
+        # 将选中的项目上移
+        selected_items = self.enabledList.selectedItems()
+        for current_item in sorted(selected_items, key=lambda x: self.enabledList.row(x)):
+            current_row = self.enabledList.row(current_item)
+            if current_row > 0:
+                current_item = self.enabledList.takeItem(current_row)
+                self.enabledList.insertItem(current_row - 1, current_item)
+                self.enabledList.setCurrentRow(current_row - 1)
+            else:
+                break
+
+    def moveDown(self):
+        # 将选中的项目下移
+        selected_items = self.enabledList.selectedItems()
+        for current_item in sorted(selected_items, key=lambda x: self.enabledList.row(x), reverse=True):
+            current_row = self.enabledList.row(current_item)
+            if current_row < self.enabledList.count() - 1 and current_row != -1:
+                current_item = self.enabledList.takeItem(current_row)
+                self.enabledList.insertItem(current_row + 1, current_item)
+                self.enabledList.setCurrentRow(current_row + 1)
+            else:
+                break
+
+    def get_selected(self):
+        items = []
+        for i in range(self.enabledList.count()):
+            items.append(self.enabledList.item(i))
+        result = [item.data(Qt.UserRole) if item.data(Qt.UserRole) is not None else item.text() for item in items]
+        return result
+
+    def show_details(self):
+        if self.get_detail is None:
+            return
+
+        selected_items = []
+
+        if self.enabledList.hasFocus():
+            selected_items = self.enabledList.selectedItems()
+        elif self.availableList.hasFocus():
+            selected_items = self.availableList.selectedItems()
+
+        if len(selected_items) > 0:
+            item = selected_items[0]
+            value = item.data(Qt.UserRole) if item.data(Qt.UserRole) is not None else item.text()
+            self.infoLabel.setHtml(self.get_detail(value))
+        else:
+            self.infoLabel.setHtml("")
+
+
 class I18nManager:
     """国际化管理类 (Internationalization manager class)"""
 
@@ -114,6 +333,7 @@ class I18nManager:
             "menu_file_log": "日志",
             "menu_file_run_dir": "运行目录",
             "menu_file_lang_dir": "语言目录",
+            "menu_file_plugin_dir": "插件目录",
             "menu_file_exit": "退出",
             "menu_options": "选项",
             "menu_options_auto_check": "自动获取状态",
@@ -169,11 +389,34 @@ class I18nManager:
             """,
             "error_log_open": "无法打开日志文件: {0}",
             "error_log_not_found": "日志文件不存在。",
-            "error_run_dir_open": "无法打开目录: {0}",
-            "error_lang_dir_open": "无法打开目录: {0}",
-            "error_run_dir_not_found": "运行目录不存在。",
-            "error_lang_dir_not_found": "语言目录不存在。",
-            "server_already_exists": "服务器 {0} 已存在，是否仍要添加？"
+            "error_dir_open": "无法打开目录: {0}",
+            "error_dir_not_found": "目录不存在，是否创建？",
+            "server_already_exists": "服务器 {0} 已存在，是否仍要添加？",
+            "no_available_checkers": "未找到可用检查器，请检查配置",
+            "menu_plugin": "插件",
+            "menu_plugin_manage_checkers": "管理检查器",
+            "plugin_id": "ID",
+            "plugin_name": "名称",
+            "plugin_description": "描述",
+            "plugin_author": "作者",
+            "plugin_version": "版本",
+            "plugin_website": "网站",
+            "plugin_license": "许可证",
+            "plugin_dependencies": "依赖项",
+            "miss_dependencies_title": "缺少依赖项",
+            "miss_dependencies_ask_install": "插件 {0} 缺少依赖项，请在命令行中执行 \"{1}\" 后重试。是否立即安装？\n\n点击\"是\"安装依赖项，点击\"否\"禁用插件。",
+            "error_title": "错误",
+            "error_install_dependencies": "插件 {0} 依赖项安装失败，请在命令行中手动执行 \"{1}\"。",
+            "server_details_checker": "检查器",
+            "server_details_port": "端口",
+            "selector_available": "可用{0}",
+            "selector_dir": "打开文件夹",
+            "selector_enabled": "已启用{0} (顺序表示优先级)",
+            "selector_up": "上移",
+            "selector_down": "下移",
+            "selector_done": "完成",
+            "selector_title": "{0}选择",
+            "manage_checkers_title": "检查器",
         }
 
         # 内置英文
@@ -184,6 +427,7 @@ class I18nManager:
             "menu_file_log": "Log",
             "menu_file_run_dir": "Run Directory",
             "menu_file_lang_dir": "Language Directory",
+            "menu_file_plugin_dir": "Plugin Directory",
             "menu_file_exit": "Exit",
             "menu_options": "Options",
             "menu_options_auto_check": "Auto Refresh Status",
@@ -239,11 +483,34 @@ class I18nManager:
             """,
             "error_log_open": "Failed to open log file: {0}",
             "error_log_not_found": "Log file does not exist.",
-            "error_run_dir_open": "Failed to open directory: {0}",
-            "error_lang_dir_open": "Failed to open directory: {0}",
-            "error_run_dir_not_found": "Run directory does not exist.",
-            "error_lang_dir_not_found": "Language directory does not exist.",
-            "server_already_exists": "Server {0} already exists. Add anyway?"
+            "error_dir_open": "Failed to open directory: {0}",
+            "error_dir_not_found": "Directory does not exist. Create?",
+            "server_already_exists": "Server {0} already exists. Add anyway?",
+            "no_available_checkers": "No available checker found. Please check your configuration.",
+            "menu_plugin": "Plugins",
+            "menu_plugin_manage_checkers": "Manage Checkers",
+            "plugin_id": "ID",
+            "plugin_name": "Name",
+            "plugin_description": "Description",
+            "plugin_author": "Author",
+            "plugin_version": "Version",
+            "plugin_website": "Website",
+            "plugin_license": "License",
+            "plugin_dependencies": "Dependencies",
+            "miss_dependencies_title": "Miss Dependencies",
+            "miss_dependencies_ask_install": 'Missing dependencies for Plugin {0}, please run "{1}" in the command line and retry. Do you want to install now?\n\nClick "Yes" to install dependencies, click "No" to disable plugin.',
+            "error_title": "Error",
+            "error_install_dependencies": 'Failed to install dependencies for Plugin {0}. please run "{1}" manually in the command line.',
+            "server_details_checker": "Checker",
+            "server_details_port": "Port",
+            "selector_available": "Available {0}",
+            "selector_dir": "Show Directory",
+            "selector_enabled": "Enabled {0} (Order represents priority)",
+            "selector_up": "Move Up",
+            "selector_down": "Move Down",
+            "selector_done": "Done",
+            "selector_title": "{0} Selector",
+            "manage_checkers_title": "Checker",
         }
 
     def load_external_language_packs(self):
@@ -308,7 +575,7 @@ class I18nManager:
             self.current_lang = self.default_lang
             return False
 
-    def translate(self, key, *args):
+    def translate(self, key, *args, default="key"):
         """翻译文本"""
         if not self.current_lang:
             self.set_language(self.default_lang)
@@ -322,38 +589,62 @@ class I18nManager:
 
         # 如果还是没有找到，返回键名
         if not translation:
-            logger.warning(f"Translation key not found: {key}")
-            translation = key
-
-        # 如果有参数，进行格式化
-        if args:
-            try:
-                translation = translation.format(*args)
-            except Exception as e:
-                logger.error(f"Failed to format translation: {translation}, args: {args}, error: {e}")
+            if default == "key":
+                logger.warning(f"Translation key not found: {key}")
+                translation = f"{key}{args}" if args else key
+            elif default == "none":
+                return None
+            else:
+                logger.warning(f"unknown default value: {default}, using default as default: {key}")
+                translation = default
+        else:
+            # 如果有参数，进行格式化
+            if args:
+                try:
+                    translation = translation.format(*args)
+                except Exception as e:
+                    logger.error(f"Failed to format translation: {translation}, args: {args}, error: {e}")
 
         return translation
+
+    def add_in(self, addins: dict[str, dict[str, str]], prefix: str = ""):
+        """添加插件翻译"""
+        if not isinstance(addins, dict):
+            logger.error("addins must be a dictionary")
+            return
+
+        for lang_code, translations in addins.items():
+            if lang_code not in i18n.lang_data:
+                i18n.lang_data[lang_code] = {}
+            i18n.lang_data[lang_code].update({f"{prefix}{k}": v for k, v in translations.items()})
 
 
 class ServerStatusThread(QThread):
     """用于后台获取服务器状态的线程类 (Thread class for fetching server status in background)"""
-    status_fetched = pyqtSignal(str, object, float)  # 信号：地址, 状态对象, 延迟 (Signal: address, status object, delay)
+    status_fetched = pyqtSignal(str, object)  # 信号：地址, 状态对象, 延迟 (Signal: address, status object, delay)
 
     def __init__(self, address):
         super().__init__()
         self.address = address
 
     def run(self):
-        try:
-            logger.info(f"开始查询服务器: {self.address}")
-            server = JavaServer.lookup(self.address)
-            latency = server.ping()  # 先获取延迟 (Get latency first)
-            status = server.status()  # 再获取完整状态 (Get full status second)
-            logger.info(f"服务器 {self.address} 查询成功, 延迟: {latency}ms")
-            self.status_fetched.emit(self.address, status, latency)
-        except Exception as e:
-            logger.info(f"服务器 {self.address} 查询失败: {str(e)}")
-            self.status_fetched.emit(self.address, str(e), -1)
+        logger.info(f"开始查询服务器: {self.address}")
+        error = []
+        for checker_id in window.settings["plugins"]["checkers"]:
+            checker: IChecker = window.plugins.plugins[checker_id]
+            status = checker.run(self.address)
+            if isinstance(status, ServerStatus):
+                status.checker = checker_id
+                logger.info(f"检查器 {checker_id} 服务器 {self.address} 查询成功")
+                self.status_fetched.emit(self.address, status)
+                return
+            elif isinstance(status, str):
+                error.append({"checker_id": checker_id, "error": status})
+            elif status is None:
+                pass
+
+        logger.error(f"服务器 {self.address} 查询失败: {error}")
+        self.status_fetched.emit(self.address, error)
 
 
 class SettingsManager:
@@ -367,15 +658,13 @@ class SettingsManager:
         """加载设置 (Load settings)"""
         try:
             with open(self.filename, "r", encoding="utf-8") as f:
-                settings = json.load(f)
                 # 确保所有设置项都存在 (Ensure all settings exist)
-                for key, default in DEFAULT_SETTINGS.items():
-                    if key not in settings:
-                        settings[key] = default
+                settings = copy.deepcopy(DEFAULT_SETTINGS)
+                settings = deep_merge(settings, json.load(f))
                 return settings
         except (FileNotFoundError, json.JSONDecodeError):
             logger.warning(f"设置文件 {self.filename} 未找到或损坏，使用默认设置")
-            return DEFAULT_SETTINGS.copy()
+            return copy.deepcopy(DEFAULT_SETTINGS)
 
     def save_settings(self):
         """保存设置 (Save settings)"""
@@ -392,6 +681,217 @@ class SettingsManager:
     def __setitem__(self, key, value):
         self.settings[key] = value
         self.save_settings()
+
+
+class PluginsManager:
+    """插件管理类 (Plugins manager class)"""
+
+    def __init__(self):
+        self.plugins_catagrories: dict[str, set[str]] = {"checkers": [], "other": []}
+        self.plugins: dict[str, IPlugin] = {}
+        self.plugin_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plugins")
+        self.checker_dir = os.path.join(self.plugin_dir, "checkers")
+        self.load_builtin_plugins()
+        self.load_external_plugins()
+
+    def get_plugin_translated_meta(self, plugin_id):
+        return {
+            "name": i18n.translate(f"plugin.{plugin_id}.name", default="none"),
+            "description": i18n.translate(f"plugin.{plugin_id}.description", default="none"),
+        }
+
+    def load_builtin_plugins(self):
+        """加载内置插件 (Load built-in plugins)"""
+        class LocalChecker(IChecker):
+            def __init__(self):
+                pass
+
+            def get_id(self) -> str:
+                return "local"
+
+            def i18n_addins(self):
+                return {
+                    "zh_cn": {
+                        "name": "本地 (内置)",
+                        "description": "使用本地mcstatus库查询方式获取服务器状态"
+                    },
+                    "en_us": {
+                        "name": "Local (built-in)",
+                        "description": "Use local mcstatus library to query server status"
+                    },
+                    "zh_tw": {
+                        "name": "本地 (內置)",
+                        "description": "使用本地mcstatus庫查詢伺服器狀態"
+                    }
+                }
+
+            def get_version(self) -> str | None:
+                return "1.0.0"
+
+            def get_author(self) -> str | None:
+                return "myworldzycpc"
+
+            def get_website(self) -> str | None:
+                return "https://github.com/myworldzycpc/mcstatus-checker"
+
+            def get_license(self) -> str | None:
+                return "MIT"
+
+            def get_dependencies(self) -> list[str] | None:
+                return ["mcstatus"]
+
+            def check_dependencies(self) -> bool:
+                try:
+                    import mcstatus
+                    return True
+                except ImportError:
+                    return False
+
+            def get_install_command(self) -> str | None:
+                return f"pip install {" ".join(self.get_dependencies())}" if self.get_dependencies() else None
+
+            def run(self, address) -> ServerStatus | str | None:
+                from mcstatus import JavaServer
+                try:
+                    server = JavaServer.lookup(address)
+                    latency = server.ping()  # 先获取延迟 (Get latency first)
+                    java_status = server.status()  # 再获取完整状态 (Get full status second)
+                    status = ServerStatus(
+                        address=address,
+                        port=server.address.port,
+                        version=java_status.version.name,
+                        protocol=java_status.version.protocol,
+                        player=java_status.players.online,
+                        max_players=java_status.players.max,
+                        latency=latency,
+                        players=[Player(name=p.name) for p in java_status.players.sample] if java_status.players.sample is not None else [],
+                        motd_plain=java_status.motd.to_plain(),
+                        motd_html=java_status.motd.to_html(),
+                        icon=java_status.icon,
+                        raw_data=json.dumps(java_status.raw, ensure_ascii=False, indent=2),
+                        method="local"
+                    )
+                    return status
+                except Exception as e:
+                    return str(e)
+
+        self.add_plugin(LocalChecker())
+
+    def load_external_plugins(self):
+
+        plugin_dir = self.plugin_dir
+        if not os.path.exists(plugin_dir):
+            logger.warning(f"插件目录 {plugin_dir} 不存在")
+            return
+
+        def load_checkers():
+            """加载检查器插件 (Load checker plugins)"""
+            checker_dir = self.checker_dir
+            if not os.path.exists(checker_dir):
+                logger.warning(f"检查器插件目录 {checker_dir} 不存在")
+                return
+
+            for file_path in glob.glob(os.path.join(checker_dir, "*.py")):
+                path = Path(file_path)
+                # 跳过__init__.py和隐藏文件
+                if path.name.startswith("_") or path.name == "__init__.py":
+                    continue
+                module_name = path.stem
+                try:
+                    # 创建模块规范
+                    spec = importlib.util.spec_from_file_location(
+                        f"plugins.{module_name}",
+                        file_path
+                    )
+                    if spec is None:
+                        logger.error(f"无法创建模块规范: {file_path}")
+                        continue
+                    # 创建并加载模块
+                    module = importlib.util.module_from_spec(spec)
+
+                    # 执行模块代码
+                    try:
+                        spec.loader.exec_module(module)
+                    except Exception as e:
+                        logger.error(f"执行模块代码失败: {e}")
+                        continue
+
+                    # 4. 检查并实例化主类
+                    if hasattr(module, "Main") and isinstance(module.Main, object) and issubclass(module.Main, IChecker):
+                        logger.info(f"实例化插件: {module_name}")
+                        try:
+                            checker_instance = module.Main()
+                            if isinstance(checker_instance, IChecker):
+                                self.add_plugin(checker_instance)
+                            else:
+                                logger.warning(f"模块 {module_name} 的主类不是 IChecker 的子类")
+                        except Exception as e:
+                            logger.error(f"实例化插件 {module_name} 失败: {e}")
+                    else:
+                        logger.warning(f"模块 {module_name} 缺少主类或不是 IChecker 的子类")
+                except Exception as e:
+                    logger.error(f"加载检查器插件 {module_name} 失败: {e}")
+
+        load_checkers()
+
+    def add_plugin(self, plugin: IPlugin):
+        """添加插件 (Add plugin)"""
+        plugin_id = plugin.get_id()
+        if plugin_id in self.plugins:
+            logger.warning(f"插件 {plugin_id} 已存在，跳过")
+            return
+        i18n.add_in(plugin.i18n_addins(), prefix=f"plugin.{plugin.get_id()}.")
+        if isinstance(plugin, IChecker):
+            self.plugins_catagrories["checkers"].append(plugin_id)
+        else:
+            self.plugins_catagrories["other"].add(plugin_id)
+        self.plugins[plugin_id] = plugin
+        logger.info(f"插件 {plugin_id} 已加载")
+
+    def check_single_dependencies(self, plugin_id):
+        plugin = self.plugins[plugin_id]
+        if not plugin.check_dependencies():
+            logger.error(f"插件 {plugin.get_id()} 依赖缺失")
+            install_command = plugin.get_install_command()
+            if install_command:
+                return window.ask_install(self.get_plugin_translated_meta(plugin.get_id())["name"], install_command, plugin.check_dependencies)
+            else:
+                QMessageBox.critical(window, i18n.translate("error"), i18n.translate("plugin_missing_dependencies", plugin.get_id()))
+                return False
+        return True
+
+    def check_dependencies(self, remove_missing=True) -> bool:
+        """检查插件依赖 (Check plugin dependencies)"""
+        for plugin_id in window.settings["plugins"]["checkers"]:
+            if not self.check_single_dependencies(plugin_id):
+                if remove_missing:
+                    window.settings["plugins"]["checkers"].remove(plugin_id)
+                    window.settings.save_settings()
+                else:
+                    return False
+        return True
+
+    def get_detail_html(self, plugin_id) -> str:
+        """获取插件详情 (Get plugin details)"""
+        plugin = self.plugins[plugin_id]
+        translated_meta = self.get_plugin_translated_meta(plugin_id)
+        return f"""
+        <h2>{translated_meta["name"] or plugin_id}</h2><br>
+        <b>{i18n.translate("plugin_id")}: </b>{plugin_id}<br>
+        <b>{i18n.translate("plugin_version")}: </b>{plugin.get_version()}<br>
+        <b>{i18n.translate("plugin_author")}: </b>{plugin.get_author()}<br>
+        <b>{i18n.translate("plugin_website")}: </b><a href="{plugin.get_website()}">{plugin.get_website()}</a><br>
+        <b>{i18n.translate("plugin_license")}: </b>{plugin.get_license()}<br>
+        <b>{i18n.translate("plugin_dependencies")}: </b>{", ".join(plugin.get_dependencies())}
+        <p>{translated_meta["description"]}</p>
+        """
+
+    def clean_settings(self):
+        for plugin_id in window.settings["plugins"]["checkers"]:
+            if plugin_id not in window.plugins.plugins:
+                logging.warning(f"插件 {plugin_id} 不存在，移除设置")
+                window.settings["plugins"]["checkers"].remove(plugin_id)
+        window.settings.save_settings()
 
 
 class ServerManager:
@@ -477,6 +977,7 @@ class MinecraftStatusChecker(QMainWindow):
         # 初始化管理器 (Initialize managers)
         self.settings = SettingsManager()
         self.server_manager = ServerManager()
+        self.plugins = PluginsManager()
 
         self.threads = []  # 活动线程列表 (Active thread list)
 
@@ -488,10 +989,6 @@ class MinecraftStatusChecker(QMainWindow):
 
         # 创建UI (Initialize UI)
         self.init_ui()
-
-        # 如果启用自动检查，刷新所有服务器状态
-        if self.settings["auto_check"]:
-            self.refresh_all()
 
     # ------------------------- UI 初始化 -------------------------
     def init_ui(self):
@@ -507,8 +1004,9 @@ class MinecraftStatusChecker(QMainWindow):
         # 文件菜单
         file_menu = bar.addMenu(i18n.translate("menu_file"))
         self.add_menu_action(file_menu, i18n.translate("menu_file_log"), self.show_log)
-        self.add_menu_action(file_menu, i18n.translate("menu_file_run_dir"), self.show_run_dir)
-        self.add_menu_action(file_menu, i18n.translate("menu_file_lang_dir"), self.show_lang_dir)
+        self.add_menu_action(file_menu, i18n.translate("menu_file_run_dir"), lambda: self.show_dir(os.path.dirname(os.path.abspath(__file__))))
+        self.add_menu_action(file_menu, i18n.translate("menu_file_lang_dir"), lambda: self.show_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lang")))
+        self.add_menu_action(file_menu, i18n.translate("menu_file_plugin_dir"), lambda: self.show_dir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "plugins")))
         file_menu.addSeparator()
         self.add_menu_action(file_menu, i18n.translate("menu_file_exit"), self.close, "Ctrl+Q")
 
@@ -559,6 +1057,13 @@ class MinecraftStatusChecker(QMainWindow):
                     checkable=True,
                     checked=(self.settings["language"] == lang_code))
                 group.addAction(action)
+
+        # 插件管理子菜单
+        plugin_menu = option_menu.addMenu(i18n.translate("menu_plugin"))
+
+        # 检查器管理action
+        self.manage_checkers_action = plugin_menu.addAction(i18n.translate("menu_plugin_manage_checkers"))
+        self.manage_checkers_action.triggered.connect(self.show_manage_checkers_dialog)
 
         # 帮助菜单
         help_menu = bar.addMenu(i18n.translate("menu_help"))
@@ -733,17 +1238,17 @@ class MinecraftStatusChecker(QMainWindow):
             else:
                 logger.error(f"未知列表显示行数设置: {self.settings['list_row_size']}")
             color = COLOR_UNCHECKED
-        elif isinstance(status_data, JavaStatusResponse):  # 在线状态
-            online_text = f"{i18n.translate('server_details_players')}: {status_data.players.online}/{status_data.players.max}"
+        elif isinstance(status_data, ServerStatus):  # 在线状态
+            online_text = f"{i18n.translate('server_details_players')}: {status_data.player}/{status_data.max_players}"
             latency_text = f"{i18n.translate('server_details_latency')}: {status_data.latency:.1f}"
 
             if self.settings["list_row_size"] == "single":
-                motd = status_data.motd.to_plain().replace('\n', '↵ ')
+                motd = status_data.motd_plain.replace('\n', '↵ ')
                 status_text = f"{online_text}, {latency_text} | {motd}"
             elif self.settings["list_row_size"] == "single_no_motd":
                 status_text = f"{online_text}, {latency_text}"
             elif self.settings["list_row_size"] == "multi":
-                motd = status_data.motd.to_plain().replace('\n', '\n  ')
+                motd = status_data.motd_plain.replace('\n', '\n  ')
                 status_text = f"{online_text}, {latency_text}\n  {motd}"
             else:
                 logger.error(f"未知列表显示行数设置: {self.settings['list_row_size']}")
@@ -751,7 +1256,10 @@ class MinecraftStatusChecker(QMainWindow):
 
             color = COLOR_ONLINE
         else:  # 错误状态
-            error_msg = str(status_data)
+            if status_data:
+                error_msg = " | ".join(i["error"] for i in status_data)
+            else:
+                error_msg = i18n.translate("no_available_checkers")
             if self.settings["list_row_size"] == "single" or self.settings["list_row_size"] == "single_no_motd":
                 status_text = f'{i18n.translate("server_status_error")}: {error_msg}'
             elif self.settings["list_row_size"] == "multi":
@@ -916,13 +1424,13 @@ class MinecraftStatusChecker(QMainWindow):
         for server in self.server_manager.addresses:
             self.refresh_status(server)
 
-    def handle_status_result(self, address, status, latency):
+    def handle_status_result(self, address, status):
         """处理状态查询结果"""
         # 存储结果
         self.server_manager.server_status[address] = status
 
         # 处理服务器图标
-        if isinstance(status, JavaStatusResponse) and status.icon:
+        if isinstance(status, ServerStatus) and status.icon:
             try:
                 # 移除Base64前缀
                 icon_data = status.icon
@@ -965,7 +1473,7 @@ class MinecraftStatusChecker(QMainWindow):
 
         server = selected_item.data(Qt.UserRole)
         address = server["address"]
-        status = self.server_manager.server_status.get(address)
+        status: ServerStatus = self.server_manager.server_status.get(address)
 
         # 构建详细信息文本
         details = f"<h2>{i18n.translate('server_details_name', server['name'])}</h2>"
@@ -973,30 +1481,40 @@ class MinecraftStatusChecker(QMainWindow):
 
         if status is None:
             details += f"<i>{i18n.translate('server_details_not_checked')}</i>"
-        elif isinstance(status, str):
-            details += f"<b>{i18n.translate('server_status_error')}:</b><br>{status}"
+        elif isinstance(status, list):
+            details += f"<b>{i18n.translate('server_status_error')}: </b>"
+            if not status:
+                details += f"{i18n.translate('no_available_checkers')}"
+            else:
+                details += "<ul>"
+                for error in status:
+                    details += f"<li>{self.plugins.get_plugin_translated_meta(error['checker_id'])['name']} - {error['error']}</li>"
+                details += "</ul>"
         else:
             # 服务器在线信息
             details += f"<b>{i18n.translate('server_details_status')}:</b> {i18n.translate('server_status_online')}<br>"
+            if status.port:
+                details += f"<b>{i18n.translate('server_details_port')}:</b> {status.port}<br>"
             details += f"<b>{i18n.translate('server_details_latency')}:</b> {status.latency:.1f}ms<br>"
-            details += f"<b>{i18n.translate('server_details_version')}:</b> {status.version.name} ({i18n.translate('server_details_protocol')}: {status.version.protocol})<br>"
-            details += f"<b>{i18n.translate('server_details_players')}:</b> {status.players.online}/{status.players.max}<br>"
+            details += f"<b>{i18n.translate('server_details_version')}:</b> {status.version} ({i18n.translate('server_details_protocol')}: {status.protocol})<br>"
+            details += f"<b>{i18n.translate('server_details_players')}:</b> {status.player}/{status.max_players}<br>"
+            details += f"<b>{i18n.translate('server_details_checker')}:</b> {self.plugins.get_plugin_translated_meta(status.checker)['name']}<br>"
 
             # MOTD信息
-            motd = status.motd.to_html()
+            motd = status.motd_html
             details += f"<b>{i18n.translate('server_details_motd')}:</b>" + motd.replace('\n', '<br>') + "<br>"
 
             # 玩家列表
-            if status.players.sample:
+            if status.players:
                 details += f"<b>{i18n.translate('server_details_players_list')}:</b><br>"
-                for player in status.players.sample:
+                for player in status.players:
                     details += f"  - {player.name}<br>"
             else:
                 details += f"<b>{i18n.translate('server_details_players_list')}:</b> {i18n.translate('server_details_players_none')}<br>"
 
             # 原始数据
             details += f"<br><b>{i18n.translate('server_details_raw_data')}:</b><br>"
-            details += f"<pre>{json.dumps(status.raw, indent=2)}</pre>"
+            details += f"<pre>{status.raw_data}</pre>"
 
         self.detail_text.setHtml(details)
 
@@ -1013,7 +1531,7 @@ class MinecraftStatusChecker(QMainWindow):
 
         # 计算右上角位置 (右上角偏移20像素)
         x_pos = self.width() - self.icon_label.width() - 50
-        y_pos = 60  # 距离顶部20像素
+        y_pos = 80  # 距离顶部20像素
 
         # 设置位置
         self.icon_label.move(x_pos, y_pos)
@@ -1142,35 +1660,54 @@ class MinecraftStatusChecker(QMainWindow):
             QMessageBox.warning(self, i18n.translate("menu_file_log"),
                                 i18n.translate("error_log_not_found"))
 
-    def show_run_dir(self):
-        """显示运行目录"""
-        run_dir = os.path.dirname(os.path.abspath(__file__))
-        if os.path.exists(run_dir):
+    def show_dir(self, dir_path):
+        """显示目录"""
+        if os.path.exists(dir_path):
             try:
-                os.startfile(run_dir)
+                os.startfile(dir_path)
             except Exception as e:
-                QMessageBox.warning(self, i18n.translate("menu_file_run_dir"),
-                                    i18n.translate("error_run_dir_open", str(e)))
+                QMessageBox.warning(self, i18n.translate("menu_file_dir"), i18n.translate("error_dir_open", str(e)))
         else:
-            QMessageBox.warning(self, i18n.translate("menu_file_run_dir"),
-                                i18n.translate("error_run_dir_not_found"))
-
-    def show_lang_dir(self):
-        """显示语言目录"""
-        lang_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lang")
-        if os.path.exists(lang_dir):
-            try:
-                os.startfile(lang_dir)
-            except Exception as e:
-                QMessageBox.warning(self, i18n.translate("menu_file_lang_dir"),
-                                    i18n.translate("error_lang_dir_open", str(e)))
-        else:
-            QMessageBox.warning(self, i18n.translate("menu_file_lang_dir"),
-                                i18n.translate("error_lang_dir_not_found"))
+            if QMessageBox.question(self, i18n.translate("menu_file_dir"), i18n.translate("error_dir_not_found"), QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes:
+                os.makedirs(dir_path)
+                self.show_dir(dir_path)
 
     def show_about(self):
         """显示关于信息"""
         QMessageBox.about(self, i18n.translate("about_title"), i18n.translate("about_text"))
+
+    def show_manage_checkers_dialog(self):
+        """显示管理检查器对话框"""
+        avaliable = set(self.plugins.plugins_catagrories["checkers"]) - set(self.settings["plugins"]["checkers"])
+        dialog = SelectorDialog(
+            i18n.translate("manage_checkers_title"),
+            [(self.plugins.get_plugin_translated_meta(p)["name"], p) for p in avaliable],
+            [(self.plugins.get_plugin_translated_meta(p)["name"], p) for p in self.settings["plugins"]["checkers"]],
+            get_detail=self.plugins.get_detail_html,
+            directory=self.plugins.checker_dir
+        )
+        if dialog.exec_() == QDialog.Accepted:
+            new_checkers = dialog.get_selected()
+            if new_checkers != self.settings["plugins"]["checkers"]:
+                self.settings["plugins"]["checkers"] = new_checkers
+                if self.plugins.check_dependencies():
+                    self.settings.save_settings()
+                    self.refresh_all()
+                else:
+                    QMessageBox.critical(self, i18n.translate("error_title"), i18n.translate("error_check_dependencies"))
+
+    def ask_install(self, plugin_name, install_command, check_func):
+        """询问是否安装依赖"""
+        ans = QMessageBox.question(self, i18n.translate("miss_dependencies_title"), i18n.translate("miss_dependencies_ask_install", plugin_name, install_command), QMessageBox.Yes | QMessageBox.No)
+        if ans == QMessageBox.Yes:
+            os.system(install_command)
+            if check_func():
+                return True
+            else:
+                QMessageBox.critical(self, i18n.translate("error_title"), i18n.translate("error_install_dependencies", plugin_name, install_command))
+                return False
+        else:
+            return False
 
 
 # ------------------------- 主程序入口 -------------------------
@@ -1188,7 +1725,17 @@ if __name__ == "__main__":
 
     window = MinecraftStatusChecker()
     window.show()
+    window.plugins.clean_settings()
+    window.plugins.check_dependencies()
 
-    exit_code = app.exec_()
-    logger.info(f"退出程序，退出码: {exit_code}")
-    sys.exit(exit_code)
+    # 如果启用自动检查，刷新所有服务器状态
+    if window.settings["auto_check"]:
+        window.refresh_all()
+
+    try:
+        exit_code = app.exec_()
+        logger.info(f"退出程序，退出码: {exit_code}")
+        sys.exit(exit_code)
+    except Exception as e:
+        logger.exception(e)
+        raise e

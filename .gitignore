@@ -1,5 +1,7 @@
 *
 !main.py
 !lang/**
+!core/*.py
+!plugins/checkers/*.py
 !LICENSE
 !README.md
