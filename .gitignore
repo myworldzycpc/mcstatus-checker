@@ -1,7 +1,11 @@
 *
-!main.py
+!main.pyw
+!lang/
 !lang/**
+!core/
 !core/*.py
+!plugins/
+!plugins/checkers/
 !plugins/checkers/*.py
 !LICENSE
 !README.md
