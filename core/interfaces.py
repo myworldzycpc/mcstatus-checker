@@ -32,7 +32,7 @@ class IPlugin(ABC):
         ...
     
     def get_install_command(self) -> str | None:
-        return f"pip install {" ".join(self.get_dependencies())}" if self.get_dependencies() else None
+        return f"pip install {' '.join(self.get_dependencies())}" if self.get_dependencies() else None
 
 
 class IChecker(IPlugin):
