@@ -32,16 +32,20 @@
 - **Global Language Expansion**: Support for additional languages (translations welcome!)
 
 ### ⚠️ 使用须知
-```diff
-+ 推荐环境：Python 3.10.6+
-! 若遇异常请提交 [Issues](https://github.com/myworldzycpc/mcstatus-checker/issues)
+
+* 推荐环境：Python 3.10.6+
+* 若遇异常请提交 [Issues](https://github.com/myworldzycpc/mcstatus-checker/issues)
+  
   并注明：Python版本 + 操作系统 + 错误日志
+  
   您的反馈将助力我们做得更好！
-  ```
+
 
 ### ⚠️ Usage Notes
-```diff
-+ Recommended environment: Python 3.10.6+
-! If you encounter any issues, please submit an [Issue](https://github.com/myworldzycpc/mcstatus-checker/issues)
+
+* Recommended environment: Python 3.10.6+
+* If you encounter any issues, please submit an [Issue](https://github.com/myworldzycpc/mcstatus-checker/issues)
+  
   and include: Python version + operating system + error log
+  
   Your feedback will help us improve!
