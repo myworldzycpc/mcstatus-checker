@@ -15,8 +15,10 @@
 - **Global Language Expansion**: Support for additional languages (translations welcome!)
 
 ### ⚠️ Usage Notes
-```diff
-+ Recommended environment: Python 3.10.6+
-! If you encounter any issues, please submit an [Issue](https://github.com/myworldzycpc/mcstatus-checker/issues)
+
+* Recommended environment: Python 3.10.6+
+* If you encounter any issues, please submit an [Issue](https://github.com/myworldzycpc/mcstatus-checker/issues)
+  
   and include: Python version + operating system + error log
+  
   Your feedback will help us improve!
