@@ -16,15 +16,15 @@
 - **Clean interface**: Minimalist design, key information at a glance
 - **Multi-language support**: Multi-language interface is ready, with more languages being added continuously
 
-### 🚀 Future Plans
-- **Android Version**: Coming soon to mobile devices—check server status anytime, anywhere!
-- **Win11 Native Compatibility**: Fully aligned with Fluent Design aesthetics
-- **Global Language Expansion**: Support for additional languages (translations welcome!)
-
 ### 🚀 未来计划
 - **安卓版本**：即将登陆移动端，随时随地查服！
 - **Win11 原生适配**：深度契合 Fluent Design 美学
 - **全球语言扩展**：支持更多语言（欢迎贡献翻译！）
+
+### 🚀 Future Plans
+- **Android Version**: Coming soon to mobile devices—check server status anytime, anywhere!
+- **Win11 Native Compatibility**: Fully aligned with Fluent Design aesthetics
+- **Global Language Expansion**: Support for additional languages (translations welcome!)
 
 ### ⚠️ 使用须知
 ```diff
