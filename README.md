@@ -1,4 +1,9 @@
+
 # Minecraft 服务器状态查看器 🎮
+
+[![language](https://img.shields.io/badge/Choose_Language_:-white?style=flat)](#)
+[![en](https://img.shields.io/badge/English-blue?style=flat)](README_en.md)
+[![zh](https://img.shields.io/badge/简体中文-blue?style=flat)](README_zh.md)
 
 **无需启动游戏！** 轻点指尖，即可实时掌握 Minecraft 服务器的在线状态、玩家动态和版本信息。
 
