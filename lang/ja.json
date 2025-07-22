@@ -51,7 +51,7 @@
     "server_details_players_none": "いいえ",
     "server_details_raw_data": "生データ",
     "about_title": "について",
-    "about_text": "<h2>Minecraftサーバーステータスチェッカー</h2>\n<p>リリース: 1.0.0</p>\n<p>著者: myworldzycpc</p>\n<p>許可證: MIT</p>\n<p>GitHub: <a href=\"https://github.com/myworldzycpc/mcstatus-checker\">https://github.com/myworldzycpc/mcstatus-checker</a></p>\n<p>をチェックするためのツールである。 Javaサーバー・ステータス・ツール。</p>",
+    "about_text": "<h2>Minecraftサーバーステータスチェッカー</h2>\n<p>リリース: 1.0.0</p>\n<p>著者: myworldzycpc</p>\n<p>許可證: GPLv3</p>\n<p>GitHub: <a href=\"https://github.com/myworldzycpc/mcstatus-checker\">https://github.com/myworldzycpc/mcstatus-checker</a></p>\n<p>をチェックするためのツールである。 Javaサーバー・ステータス・ツール。</p>",
     "error_log_open": "ログファイルが開けません: {0}",
     "error_log_not_found": "ログファイルが存在しない。",
     "error_dir_open": "ディレクトリを開くことができません: {0}",

@@ -51,7 +51,7 @@
     "server_details_players_none": "無",
     "server_details_raw_data": "原始數據",
     "about_title": "關於",
-    "about_text": "<h2>Minecraft伺服器狀態檢查器</h2>\n<p>版本: 1.0.0</p>\n<p>作者: myworldzycpc</p>\n<p>許可證: MIT</p>\n<p>GitHub: <a href=\"https://github.com/myworldzycpc/mcstatus-checker\">https://github.com/myworldzycpc/mcstatus-checker</a></p>\n<p>這是一個用於檢查Minecraft Java版伺服器狀態的工具。</p>",
+    "about_text": "<h2>Minecraft伺服器狀態檢查器</h2>\n<p>版本: 1.0.0</p>\n<p>作者: myworldzycpc</p>\n<p>許可證: GPLv3</p>\n<p>GitHub: <a href=\"https://github.com/myworldzycpc/mcstatus-checker\">https://github.com/myworldzycpc/mcstatus-checker</a></p>\n<p>這是一個用於檢查Minecraft Java版伺服器狀態的工具。</p>",
     "error_log_open": "無法打開日誌文件: {0}",
     "error_log_not_found": "日誌文件不存在。",
     "error_dir_open": "無法打開目錄: {0}",

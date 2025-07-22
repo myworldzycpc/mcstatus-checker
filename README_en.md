@@ -22,3 +22,9 @@
   and include: Python version + operating system + error log
   
   Your feedback will help us improve!
+
+## License description
+
+- As of the submission of [`<latest submission hash>`](link), this project is under the **GPLv3** license
+- Historical versions contain incorrect MIT license statements, and are actually always subject to PyQt5's GPLv3
+- **All users must comply with the terms of the [GPLv3](LICENSE)**
