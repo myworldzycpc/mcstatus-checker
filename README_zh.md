@@ -25,6 +25,6 @@
 
 ## 许可证说明
 
-- 自提交 [`<最新提交哈希>`](链接) 起，本项目采用 **GPLv3** 许可证
+- 自提交 [`d9660cb`](https://github.com/myworldzycpc/mcstatus-checker/commit/d9660cbe0b2b72c4f8548f7308a7068497994cd0) 起，本项目采用 **GPLv3** 许可证
 - 历史版本包含错误的MIT许可声明，实际始终受PyQt5的GPLv3约束
 - **所有用户必须遵守[GPLv3](LICENSE)条款**

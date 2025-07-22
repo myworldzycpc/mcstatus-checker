@@ -25,6 +25,6 @@
 
 ## License description
 
-- As of the submission of [`<latest submission hash>`](link), this project is under the **GPLv3** license
+- As of the submission of [`d9660cb`](https://github.com/myworldzycpc/mcstatus-checker/commit/d9660cbe0b2b72c4f8548f7308a7068497994cd0), this project is under the **GPLv3** license
 - Historical versions contain incorrect MIT license statements, and are actually always subject to PyQt5's GPLv3
 - **All users must comply with the terms of the [GPLv3](LICENSE)**
