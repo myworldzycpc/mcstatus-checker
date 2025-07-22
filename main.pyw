@@ -383,7 +383,7 @@ class I18nManager:
             <h2>Minecraft 服务器状态检查器</h2>
             <p>版本: 1.0.0</p>
             <p>作者: myworldzycpc</p>
-            <p>许可证: MIT</p>
+            <p>许可证: GPLv3</p>
             <p>GitHub: <a href="https://github.com/myworldzycpc/mcstatus-checker">https://github.com/myworldzycpc/mcstatus-checker</a></p>
             <p>这是一个用于检查Minecraft Java版服务器状态的小工具。</p>
             """,
@@ -477,7 +477,7 @@ class I18nManager:
             <h2>Minecraft Server Status Checker</h2>
             <p>Version: 1.0.0</p>
             <p>Author: myworldzycpc</p>
-            <p>License: MIT</p>
+            <p>License: GPLv3</p>
             <p>GitHub: <a href="https://github.com/myworldzycpc/mcstatus-checker">https://github.com/myworldzycpc/mcstatus-checker</a></p>
             <p>This is a tool for checking the status of Minecraft Java Edition servers.</p>
             """,
@@ -735,7 +735,7 @@ class PluginsManager:
                 return "https://github.com/myworldzycpc/mcstatus-checker"
 
             def get_license(self) -> str | None:
-                return "MIT"
+                return "GPLv3"
 
             def get_dependencies(self) -> list[str] | None:
                 return ["mcstatus"]

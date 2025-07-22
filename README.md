@@ -49,3 +49,15 @@
   and include: Python version + operating system + error log
   
   Your feedback will help us improve!
+
+## 许可证说明
+
+- 自提交 [`<最新提交哈希>`](链接) 起，本项目采用 **GPLv3** 许可证
+- 历史版本包含错误的MIT许可声明，实际始终受PyQt5的GPLv3约束
+- **所有用户必须遵守[GPLv3](LICENSE)条款**
+
+## License description
+
+- As of the submission of [`<latest submission hash>`](link), this project is under the **GPLv3** license
+- Historical versions contain incorrect MIT license statements, and are actually always subject to PyQt5's GPLv3
+- **All users must comply with the terms of the [GPLv3](LICENSE)**

@@ -52,7 +52,7 @@ class Main(IChecker):
         return "https://github.com/myworldzycpc/mcstatus-checker"
 
     def get_license(self) -> str | None:
-        return "MIT"
+        return "GPLv3"
 
     def get_dependencies(self) -> list[str] | None:
         return ["mcstatus", "python-mcstatus"]
